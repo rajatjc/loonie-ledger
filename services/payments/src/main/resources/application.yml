@@ -1,0 +1,34 @@
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: payments
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/payments}
+    username: ${DATABASE_USER:loonie}
+    password: ${DATABASE_PASSWORD:loonie}
+    hikari:
+      maximum-pool-size: 8
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  threads:
+    virtual:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+loonie:
+  admin-token: ${ADMIN_TOKEN:dev-admin-token}
+  consumer-name: ${CONSUMER_NAME:payments-1}
