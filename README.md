@@ -6,5 +6,6 @@ Work in progress: pieces are being added one at a time.
 ## So far
 
 - [`services/payments`](services/payments): Java 21 + Spring Boot. Accounts, transfers, a double-entry ledger, and a transactional outbox. Money moves only after both the fraud and the compliance checks pass.
+- [`services/fraud`](services/fraud): Python + FastAPI. Scores every transfer with explainable rules and holds risky ones for review.
 
 Not a real bank.
