@@ -8,5 +8,6 @@ Work in progress: pieces are being added one at a time.
 - [`services/payments`](services/payments): Java 21 + Spring Boot. Accounts, transfers, a double-entry ledger, and a transactional outbox. Money moves only after both the fraud and the compliance checks pass.
 - [`services/fraud`](services/fraud): Python + FastAPI. Scores every transfer with explainable rules and holds risky ones for review.
 - [`services/compliance`](services/compliance): Node.js + TypeScript. $10,000 large-transaction reviews, 24-hour structuring checks, and a hash-chained audit log.
+- [`services/gateway`](services/gateway): the website (React) with banking, a review queue, compliance, and a behind-the-scenes ops console with a browser terminal.
 
 Not a real bank.
