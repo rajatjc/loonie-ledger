@@ -1,0 +1,81 @@
+# Runs the whole bank locally: docker compose up --build   (or: podman compose up --build)
+# Then open http://localhost:8080 (set GATEWAY_PORT to use another port).
+name: loonie-ledger
+
+x-admin: &admin
+  ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: loonie
+      POSTGRES_PASSWORD: loonie
+      POSTGRES_DB: payments
+    volumes:
+      - ./deploy/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "loonie"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
+
+  payments:
+    build: ./services/payments
+    environment:
+      <<: *admin
+      DATABASE_URL: jdbc:postgresql://postgres:5432/payments
+      REDIS_HOST: redis
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  fraud:
+    build: ./services/fraud
+    environment:
+      <<: *admin
+      REDIS_HOST: redis
+      CONSUMER_NAME: fraud-1
+    depends_on:
+      redis: { condition: service_healthy }
+
+  compliance:
+    build: ./services/compliance
+    environment:
+      <<: *admin
+      DATABASE_URL: postgres://loonie:loonie@postgres:5432/compliance
+      REDIS_HOST: redis
+      CONSUMER_NAME: compliance-1
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  gateway:
+    build: ./services/gateway
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    environment:
+      <<: *admin
+      PAYMENTS_URL: http://payments:8080
+      FRAUD_URL: http://fraud:8000
+      COMPLIANCE_URL: http://compliance:8081
+      REDIS_HOST: redis
+      TERMINAL_MODE: demo
+    depends_on:
+      - payments
+      - fraud
+      - compliance
+
+volumes:
+  pgdata:
+  redisdata:
