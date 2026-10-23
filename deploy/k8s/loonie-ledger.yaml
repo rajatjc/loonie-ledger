@@ -1,0 +1,317 @@
+# Loonie Ledger on Kubernetes. The gateway's terminal is a real shell here, and
+# its service account may only manage pods and deployments in this namespace.
+# Build and load the images first; see "Run it on Kubernetes" in the README.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: loonie
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: loonie-secrets
+  namespace: loonie
+stringData:
+  admin-token: change-me-in-real-deployments
+  db-password: loonie
+---
+# ---------- Postgres ----------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: loonie
+data:
+  init.sql: create database compliance;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: loonie
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: loonie
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - { name: POSTGRES_USER, value: loonie }
+            - { name: POSTGRES_DB, value: payments }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: loonie-secrets, key: db-password } }
+          ports: [{ containerPort: 5432 }]
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "loonie"] }
+            periodSeconds: 3
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: init, mountPath: /docker-entrypoint-initdb.d }
+      volumes:
+        - name: init
+          configMap: { name: postgres-init }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 1Gi } }
+---
+# ---------- Redis ----------
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: loonie
+spec:
+  selector: { app: redis }
+  ports: [{ port: 6379 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: loonie
+spec:
+  serviceName: redis
+  replicas: 1
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata: { labels: { app: redis } }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["--appendonly", "yes"]
+          ports: [{ containerPort: 6379 }]
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 3
+          volumeMounts: [{ name: data, mountPath: /data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 256Mi } }
+---
+# ---------- payments (Java) ----------
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments
+  namespace: loonie
+spec:
+  selector: { app: payments }
+  ports: [{ port: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments
+  namespace: loonie
+spec:
+  replicas: 1 # one consumer reads the verdict streams
+  selector: { matchLabels: { app: payments } }
+  template:
+    metadata: { labels: { app: payments } }
+    spec:
+      enableServiceLinks: false # otherwise Kubernetes injects REDIS_PORT=tcp://..., which clashes with ours
+      containers:
+        - name: payments
+          image: loonie-payments:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: DATABASE_URL, value: "jdbc:postgresql://postgres:5432/payments" }
+            - name: DATABASE_PASSWORD
+              valueFrom: { secretKeyRef: { name: loonie-secrets, key: db-password } }
+            - { name: REDIS_HOST, value: redis }
+            - name: ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: loonie-secrets, key: admin-token } }
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            periodSeconds: 3
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+---
+# ---------- fraud (Python) ----------
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud
+  namespace: loonie
+spec:
+  selector: { app: fraud }
+  ports: [{ port: 8000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud
+  namespace: loonie
+spec:
+  replicas: 1 # scale it up: replicas share the work through the consumer group
+  selector: { matchLabels: { app: fraud } }
+  template:
+    metadata: { labels: { app: fraud } }
+    spec:
+      enableServiceLinks: false # otherwise Kubernetes injects REDIS_PORT=tcp://..., which clashes with ours
+      containers:
+        - name: fraud
+          image: loonie-fraud:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: REDIS_HOST, value: redis }
+            - name: ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: loonie-secrets, key: admin-token } }
+          ports: [{ containerPort: 8000 }]
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 3
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 256Mi }
+---
+# ---------- compliance (Node.js) ----------
+apiVersion: v1
+kind: Service
+metadata:
+  name: compliance
+  namespace: loonie
+spec:
+  selector: { app: compliance }
+  ports: [{ port: 8081 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compliance
+  namespace: loonie
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: compliance } }
+  template:
+    metadata: { labels: { app: compliance } }
+    spec:
+      enableServiceLinks: false # otherwise Kubernetes injects REDIS_PORT=tcp://..., which clashes with ours
+      containers:
+        - name: compliance
+          image: loonie-compliance:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: loonie-secrets, key: db-password } }
+            - { name: DATABASE_URL, value: "postgres://loonie:$(DB_PASSWORD)@postgres:5432/compliance" }
+            - { name: REDIS_HOST, value: redis }
+            - name: ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: loonie-secrets, key: admin-token } }
+          ports: [{ containerPort: 8081 }]
+          readinessProbe:
+            httpGet: { path: /health, port: 8081 }
+            periodSeconds: 3
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 256Mi }
+---
+# ---------- gateway: website, API proxy and ops terminal ----------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gateway
+  namespace: loonie
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ops-console
+  namespace: loonie
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gateway-ops-console
+  namespace: loonie
+subjects:
+  - { kind: ServiceAccount, name: gateway, namespace: loonie }
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ops-console
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: loonie
+spec:
+  selector: { app: gateway }
+  ports: [{ port: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: loonie
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: gateway } }
+  template:
+    metadata: { labels: { app: gateway } }
+    spec:
+      enableServiceLinks: false # otherwise Kubernetes injects REDIS_PORT=tcp://..., which clashes with ours
+      serviceAccountName: gateway
+      containers:
+        - name: gateway
+          image: loonie-gateway:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: TERMINAL_MODE, value: kubernetes }
+            - { name: PAYMENTS_URL, value: "http://payments:8080" }
+            - { name: FRAUD_URL, value: "http://fraud:8000" }
+            - { name: COMPLIANCE_URL, value: "http://compliance:8081" }
+            - { name: REDIS_HOST, value: redis }
+            - name: ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: loonie-secrets, key: admin-token } }
+            # So psql in the terminal connects without prompting.
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: loonie-secrets, key: db-password } }
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            periodSeconds: 3
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 384Mi }
