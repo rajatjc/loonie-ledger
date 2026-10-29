@@ -1,5 +1,5 @@
 # The full Node image has the compilers node-pty needs.
-FROM node:22-bookworm AS build
+FROM node:25-bookworm AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci
@@ -10,7 +10,7 @@ COPY web web
 RUN npx tsc && npm --prefix web run build && npm prune --omit=dev
 
 # The ops shell needs kubectl, redis-cli, psql and curl when running on Kubernetes.
-FROM node:22-bookworm-slim
+FROM node:25-bookworm-slim
 ARG TARGETARCH
 ARG KUBECTL_VERSION=v1.33.4
 RUN apt-get update \
