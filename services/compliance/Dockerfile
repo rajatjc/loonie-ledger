@@ -1,11 +1,11 @@
-FROM node:22-slim AS build
+FROM node:25-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci
 COPY src src
 RUN npx tsc && npm prune --omit=dev
 
-FROM node:22-slim
+FROM node:25-slim
 WORKDIR /app
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/dist dist
