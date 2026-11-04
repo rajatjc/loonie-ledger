@@ -14,6 +14,10 @@ updates:
       npm-minor-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+    ignore:
+      # Type definitions follow the Node version the services run on (22 LTS), not run ahead of it.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: gradle
     directory: /services/payments
@@ -26,6 +30,11 @@ updates:
       gradle-minor-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+    ignore:
+      # Spring Boot 4 does not compile against this code yet (Jackson 3 moved its packages).
+      # Remove this once the payments service has been migrated.
+      - dependency-name: "org.springframework.boot"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: pip
     directory: /services/fraud
@@ -50,6 +59,12 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # Stay on LTS runtimes: Node 22, Java 21. Move up by hand when you choose to.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+      - dependency-name: eclipse-temurin
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker-compose
     directory: /
@@ -58,6 +73,10 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # Postgres 18 stores its data in a different directory, so the volume mount has to change first.
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
