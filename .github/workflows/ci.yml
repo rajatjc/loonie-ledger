@@ -19,7 +19,16 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: gradle
-      # Runs against real Postgres and Redis through Testcontainers, which the runner's Docker provides.
+      # The tests start real Postgres and Redis through Testcontainers, so they need a reachable Docker
+      # daemon. Show what this runner has, so a failure here can be read straight from the log.
+      - name: Show the Docker on this runner
+        working-directory: .
+        run: docker version
+      # Newer Docker engines refuse the old API version Testcontainers 1.x asks for by default, which
+      # makes it report "could not find a valid Docker environment". Ask for a version they accept.
+      - name: Let Testcontainers talk to a current Docker engine
+        working-directory: .
+        run: echo "api.version=1.44" > ~/.docker-java.properties
       - run: ./gradlew test
 
   fraud:

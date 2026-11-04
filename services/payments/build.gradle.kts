@@ -35,6 +35,12 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // Print the whole exception for a failing test. Without it a Testcontainers start-up failure
+    // shows only "ContainerFetchException" and hides the actual reason.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }
 
 tasks.bootJar {
