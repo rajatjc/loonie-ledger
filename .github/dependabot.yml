@@ -18,6 +18,10 @@ updates:
       # Type definitions follow the Node version the services run on (22 LTS), not run ahead of it.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # @vitejs/plugin-react 4.x only supports Vite up to 7, so Vite 8 cannot install on its own.
+      # Upgrade Vite and the React plugin together by hand, then remove this.
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: gradle
     directory: /services/payments
