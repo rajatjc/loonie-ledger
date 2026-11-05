@@ -9,6 +9,8 @@ service and a **compliance** service before any money moves. If either one
 flags it, the funds stay on hold until someone on the operations team approves
 or rejects it.
 
+**Live demo: <https://loonie-ledger.onrender.com>** (free hosting, so the first load after a quiet spell takes a minute while the services wake up)
+
 > Not a real bank. The compliance rules are modeled on Canada's FINTRAC $10,000
 > reporting threshold for demonstration only.
 
@@ -89,6 +91,11 @@ plain-English reason, such as "First transfer to Liam" or "4.2x this
 customer's average transfer", which shows up for the reviewer.
 
 ## Run it
+
+### Option 0: the hosted demo
+
+Open <https://loonie-ledger.onrender.com>. It is deployed from [render.yaml](render.yaml) as a Render
+Blueprint, on the free plan, with the terminal in demo mode.
 
 ### Option 1: one command, with Docker or Podman Compose
 
