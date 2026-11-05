@@ -1,0 +1,107 @@
+# Render Blueprint: the whole bank on the free plan.
+#
+# Free web services sleep after 15 minutes without traffic, and the free Postgres is deleted after
+# 30 days. That is fine for a demo: the gateway wakes the others when someone opens the site. Switch
+# every `plan: free` to `starter` (and Postgres to a paid plan) to keep it always on.
+#
+# Both Postgres users share one database. Compliance keeps its tables in the `compliance` schema.
+
+envVarGroups:
+  - name: loonie-shared
+    envVars:
+      - key: ADMIN_TOKEN
+        generateValue: true
+
+databases:
+  - name: loonie-db
+    databaseName: payments
+    user: loonie
+    plan: free
+
+services:
+  - type: keyvalue
+    name: loonie-redis
+    plan: free
+    maxmemoryPolicy: noeviction # streams must never be evicted
+    ipAllowList: [] # private network only
+
+  - type: web
+    name: loonie-payments
+    runtime: docker
+    plan: free
+    dockerfilePath: ./services/payments/Dockerfile
+    dockerContext: ./services/payments
+    healthCheckPath: /actuator/health
+    envVars:
+      - fromGroup: loonie-shared
+      - { key: PORT, value: "8080" }
+      - key: DATABASE_HOST
+        fromDatabase: { name: loonie-db, property: host }
+      - key: DATABASE_PORT
+        fromDatabase: { name: loonie-db, property: port }
+      - key: DATABASE_NAME
+        fromDatabase: { name: loonie-db, property: database }
+      - key: DATABASE_USER
+        fromDatabase: { name: loonie-db, property: user }
+      - key: DATABASE_PASSWORD
+        fromDatabase: { name: loonie-db, property: password }
+      - key: REDIS_HOST
+        fromService: { type: keyvalue, name: loonie-redis, property: host }
+      - key: REDIS_PORT
+        fromService: { type: keyvalue, name: loonie-redis, property: port }
+
+  - type: web
+    name: loonie-fraud
+    runtime: docker
+    plan: free
+    dockerfilePath: ./services/fraud/Dockerfile
+    dockerContext: ./services/fraud
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: loonie-shared
+      - { key: PORT, value: "8000" }
+      - key: REDIS_HOST
+        fromService: { type: keyvalue, name: loonie-redis, property: host }
+      - key: REDIS_PORT
+        fromService: { type: keyvalue, name: loonie-redis, property: port }
+
+  - type: web
+    name: loonie-compliance
+    runtime: docker
+    plan: free
+    dockerfilePath: ./services/compliance/Dockerfile
+    dockerContext: ./services/compliance
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: loonie-shared
+      - { key: PORT, value: "8081" }
+      - { key: COMPLIANCE_SCHEMA, value: compliance }
+      - key: DATABASE_URL
+        fromDatabase: { name: loonie-db, property: connectionString }
+      - key: REDIS_HOST
+        fromService: { type: keyvalue, name: loonie-redis, property: host }
+      - key: REDIS_PORT
+        fromService: { type: keyvalue, name: loonie-redis, property: port }
+
+  - type: web
+    name: loonie-ledger
+    runtime: docker
+    plan: free
+    dockerfilePath: ./services/gateway/Dockerfile
+    dockerContext: ./services/gateway
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: loonie-shared
+      - { key: PORT, value: "8080" }
+      # Render sets KUBERNETES_SERVICE_HOST, which would otherwise select the real-shell mode.
+      - { key: TERMINAL_MODE, value: demo }
+      - key: PAYMENTS_URL
+        fromService: { type: web, name: loonie-payments, property: hostport }
+      - key: FRAUD_URL
+        fromService: { type: web, name: loonie-fraud, property: hostport }
+      - key: COMPLIANCE_URL
+        fromService: { type: web, name: loonie-compliance, property: hostport }
+      - key: REDIS_HOST
+        fromService: { type: keyvalue, name: loonie-redis, property: host }
+      - key: REDIS_PORT
+        fromService: { type: keyvalue, name: loonie-redis, property: port }

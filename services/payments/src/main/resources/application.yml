@@ -6,7 +6,8 @@ spring:
   application:
     name: payments
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/payments}
+    # DATABASE_URL wins; Render supplies the parts separately because it cannot build a JDBC URL.
+    url: ${DATABASE_URL:jdbc:postgresql://${DATABASE_HOST:localhost}:${DATABASE_PORT:5432}/${DATABASE_NAME:payments}}
     username: ${DATABASE_USER:loonie}
     password: ${DATABASE_PASSWORD:loonie}
     hikari:

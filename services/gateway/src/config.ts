@@ -16,10 +16,13 @@ export interface Service {
   port: number;
 }
 
+/** Render hands over "host:port" with no scheme; compose and Kubernetes give a full URL. */
+const withScheme = (url: string): string => (/^https?:\/\//.test(url) ? url : `http://${url}`);
+
 export const SERVICES: Service[] = [
-  { name: "payments", url: process.env.PAYMENTS_URL ?? "http://localhost:8080", health: "/actuator/health", stats: "/api/stats", port: 8080 },
-  { name: "fraud", url: process.env.FRAUD_URL ?? "http://localhost:8000", health: "/health", stats: "/api/fraud/stats", port: 8000 },
-  { name: "compliance", url: process.env.COMPLIANCE_URL ?? "http://localhost:8081", health: "/health", stats: "/api/compliance/stats", port: 8081 },
+  { name: "payments", url: withScheme(process.env.PAYMENTS_URL ?? "http://localhost:8080"), health: "/actuator/health", stats: "/api/stats", port: 8080 },
+  { name: "fraud", url: withScheme(process.env.FRAUD_URL ?? "http://localhost:8000"), health: "/health", stats: "/api/fraud/stats", port: 8000 },
+  { name: "compliance", url: withScheme(process.env.COMPLIANCE_URL ?? "http://localhost:8081"), health: "/health", stats: "/api/compliance/stats", port: 8081 },
 ];
 
 export const STREAMS = ["transfers", "fraud.decisions", "compliance.decisions", "transfer.updates"];

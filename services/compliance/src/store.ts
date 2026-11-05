@@ -7,7 +7,17 @@ export const pool = new pg.Pool({
   max: 5,
 });
 
+// On Render both services share one database, so compliance keeps its tables in its own schema.
+const schema = process.env.COMPLIANCE_SCHEMA;
+if (schema) {
+  if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error("COMPLIANCE_SCHEMA must be a plain lowercase identifier");
+  pool.on("connect", (client) => {
+    void client.query(`set search_path to ${schema}`);
+  });
+}
+
 export async function migrate(): Promise<void> {
+  if (schema) await pool.query(`create schema if not exists ${schema}`);
   await pool.query(`
     create table if not exists screened_transfers (
       transfer_id  text primary key,
